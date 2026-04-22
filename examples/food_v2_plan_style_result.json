@@ -1,0 +1,812 @@
+{
+  "status": "ok",
+  "kind": "action",
+  "input": {
+    "question": "查询出去年会员积分最多的前10个用户，提示每个用户的会员等级，并赠送一张菜品免费消费卷；同时找出当前仓库中临期最为严重的原材料，并找出消耗量较高的菜品，赠送这个菜品的消费券；然后新增一个会员套餐，消费满足赠送菜品的基本成本就可以使用送菜的券。",
+    "dialect": "ANSI_SQL",
+    "generation_mode": "llm_sql",
+    "model_name": "restaurant_management_model_semantic_v3"
+  },
+  "output": {
+    "sql": "",
+    "is_valid": true,
+    "intent": "action",
+    "confidence": 1.0,
+    "referenced_tables": [],
+    "referenced_metrics": [],
+    "validation_errors": [],
+    "validation_warnings": [],
+    "yaml_trace": [],
+    "metrics": {}
+  },
+  "action": {
+    "action_intent": "action",
+    "action_confidence": 1.0,
+    "action_candidates": [
+      {
+        "id": "membership_package_benefits/add_coupon_benefit",
+        "title": "为会员套餐添加券类权益（含最低消费/基本成本门槛）",
+        "dataset": "membership_package_benefits",
+        "kind": "command",
+        "operation": "create",
+        "aggregate": "MembershipPackage",
+        "entity_name": "membership_package_benefits",
+        "score": 1.2000000000000002,
+        "match_details": [
+          {
+            "match_type": "tag_substring",
+            "value": "会员"
+          },
+          {
+            "match_type": "tag_substring",
+            "value": "套餐"
+          },
+          {
+            "match_type": "tag_substring",
+            "value": "券"
+          }
+        ],
+        "applies_to": {
+          "entity": "dataset"
+        },
+        "io_schema": {
+          "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "package_id",
+              "coupon_id",
+              "min_spend_amount"
+            ],
+            "properties": {
+              "package_id": {
+                "type": "string"
+              },
+              "coupon_id": {
+                "type": "string"
+              },
+              "min_spend_amount": {
+                "type": "number"
+              },
+              "benefit_type": {
+                "type": "string",
+                "default": "COUPON"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "effects": [],
+        "tags": [
+          "会员",
+          "套餐",
+          "权益",
+          "券"
+        ],
+        "examples": [
+          "为某会员套餐绑定免费菜券，并设置最低消费=该菜品基本成本",
+          "给新建套餐增加券权益（门槛满足即可使用）"
+        ],
+        "synonyms": [],
+        "idempotency": "non_idempotent"
+      },
+      {
+        "id": "dishes/recommend_for_expiring_ingredients",
+        "title": "推荐用于消耗临期原材料的菜品 TopN",
+        "dataset": "dishes",
+        "kind": "query",
+        "operation": "rank",
+        "aggregate": "MenuAnalytics",
+        "entity_name": "dishes",
+        "score": 0.8,
+        "match_details": [
+          {
+            "match_type": "tag_substring",
+            "value": "临期"
+          },
+          {
+            "match_type": "tag_substring",
+            "value": "菜品"
+          }
+        ],
+        "applies_to": {
+          "entity": "dataset"
+        },
+        "io_schema": {
+          "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "as_of_time": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "store_id": {
+                "type": "string"
+              },
+              "expiry_within_days": {
+                "type": "integer",
+                "default": 7
+              },
+              "lookback_days": {
+                "type": "integer",
+                "default": 30
+              },
+              "top_n": {
+                "type": "integer",
+                "default": 10
+              },
+              "strategy": {
+                "type": "string",
+                "enum": [
+                  "THEORETICAL_USAGE",
+                  "EXPECTED_USAGE_7D"
+                ],
+                "default": "EXPECTED_USAGE_7D"
+              }
+            }
+          }
+        },
+        "effects": [],
+        "tags": [
+          "库存",
+          "临期",
+          "菜品",
+          "推荐"
+        ],
+        "examples": [
+          "临期原材料很多，推荐最能消耗临期原料的菜品Top5",
+          "按近7天销量与配方用量综合推荐临期消耗菜品Top10"
+        ],
+        "synonyms": [],
+        "idempotency": "idempotent"
+      },
+      {
+        "id": "customers/top_members_by_points",
+        "title": "查询积分最多的会员 TopN",
+        "dataset": "customers",
+        "kind": "query",
+        "operation": "rank",
+        "aggregate": "CustomerAnalytics",
+        "entity_name": "customers",
+        "score": 0.8,
+        "match_details": [
+          {
+            "match_type": "tag_substring",
+            "value": "会员"
+          },
+          {
+            "match_type": "tag_substring",
+            "value": "积分"
+          }
+        ],
+        "applies_to": {
+          "entity": "dataset"
+        },
+        "io_schema": {
+          "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "date_range"
+            ],
+            "properties": {
+              "date_range": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "start",
+                  "end"
+                ],
+                "properties": {
+                  "start": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "end": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              },
+              "top_n": {
+                "type": "integer",
+                "default": 10
+              },
+              "include_negative": {
+                "type": "boolean",
+                "default": false
+              }
+            }
+          }
+        },
+        "effects": [],
+        "tags": [
+          "会员",
+          "积分",
+          "排行"
+        ],
+        "examples": [
+          "查询去年积分最多的前10个用户",
+          "今年积分Top20会员是谁？"
+        ],
+        "synonyms": [],
+        "idempotency": "idempotent"
+      },
+      {
+        "id": "customer_memberships/upgrade_tier",
+        "title": "提升会员等级",
+        "dataset": "customer_memberships",
+        "kind": "command",
+        "operation": "update",
+        "aggregate": "Membership",
+        "entity_name": "customer_memberships",
+        "score": 0.8,
+        "match_details": [
+          {
+            "match_type": "tag_substring",
+            "value": "会员"
+          },
+          {
+            "match_type": "tag_substring",
+            "value": "等级"
+          }
+        ],
+        "applies_to": {
+          "entity": "dataset"
+        },
+        "io_schema": {
+          "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "customer_id",
+              "target_tier_id",
+              "effective_time"
+            ],
+            "properties": {
+              "customer_id": {
+                "type": "string"
+              },
+              "target_tier_id": {
+                "type": "string"
+              },
+              "effective_time": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "effects": [],
+        "tags": [
+          "会员",
+          "等级",
+          "运营"
+        ],
+        "examples": [
+          "把该会员升级到黄金会员",
+          "将积分Top10会员统一提升一个等级并立即生效"
+        ],
+        "synonyms": [],
+        "idempotency": "non_idempotent"
+      },
+      {
+        "id": "membership_packages/create",
+        "title": "创建会员套餐",
+        "dataset": "membership_packages",
+        "kind": "command",
+        "operation": "create",
+        "aggregate": "MembershipPackage",
+        "entity_name": "membership_packages",
+        "score": 0.8,
+        "match_details": [
+          {
+            "match_type": "tag_substring",
+            "value": "会员"
+          },
+          {
+            "match_type": "tag_substring",
+            "value": "套餐"
+          }
+        ],
+        "applies_to": {
+          "entity": "dataset"
+        },
+        "io_schema": {
+          "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "package_code",
+              "package_name",
+              "price",
+              "currency"
+            ],
+            "properties": {
+              "package_code": {
+                "type": "string"
+              },
+              "package_name": {
+                "type": "string"
+              },
+              "price": {
+                "type": "number"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "start_date": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end_date": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        "effects": [],
+        "tags": [
+          "会员",
+          "套餐",
+          "运营"
+        ],
+        "examples": [
+          "新增一个会员送菜套餐",
+          "创建会员套餐并设置价格"
+        ],
+        "synonyms": [],
+        "idempotency": "non_idempotent"
+      }
+    ],
+    "rule_hints": [],
+    "action_suggestions": [
+      {
+        "dataset": "dishes",
+        "action_id": "dishes/recommend_for_expiring_ingredients",
+        "score": 5
+      },
+      {
+        "dataset": "customers",
+        "action_id": "customers/top_members_by_points",
+        "score": 4
+      },
+      {
+        "dataset": "customer_memberships",
+        "action_id": "customer_memberships/upgrade_tier",
+        "score": 4
+      },
+      {
+        "dataset": "membership_packages",
+        "action_id": "membership_packages/create",
+        "score": 4
+      },
+      {
+        "dataset": "membership_package_benefits",
+        "action_id": "membership_package_benefits/add_coupon_benefit",
+        "score": 4
+      }
+    ]
+  },
+  "plan": {
+    "plan_id": "plan_20260422_083628",
+    "style": "Query-1..Action-2",
+    "assumptions": [
+      "Query-3 的“高消耗”目前用销量 TopN 近似；如需按“配方×销量”精确估算原料消耗量，建议新增专用 action_type（例如 dishes/top_consumers_of_ingredient 或 ingredients/estimated_usage_by_dish）。",
+      "Action 的 args 使用 $StepRef 引用上一步结果；真实执行时需由执行器解析依赖并填充参数。",
+      "套餐价格/门槛默认取赠送菜品的理论单位成本 dish_theoretical_unit_cost（若该字段不在推荐结果中，则执行器需补一次成本查询）。"
+    ],
+    "steps": [
+      {
+        "step_id": "Query-1",
+        "title": "去年积分 Top10 会员（含会员等级提示所需字段）",
+        "kind": "query",
+        "action_id": "customers/top_members_by_points",
+        "dataset": "customers",
+        "operation": "rank",
+        "aggregate": "CustomerAnalytics",
+        "io_schema": {
+          "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "date_range"
+            ],
+            "properties": {
+              "date_range": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "start",
+                  "end"
+                ],
+                "properties": {
+                  "start": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "end": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              },
+              "top_n": {
+                "type": "integer",
+                "default": 10
+              },
+              "include_negative": {
+                "type": "boolean",
+                "default": false
+              }
+            }
+          }
+        },
+        "idempotency": "idempotent",
+        "args": {
+          "date_range": {
+            "start": "2025-01-01T00:00:00+00:00",
+            "end": "2025-12-31T23:59:59+00:00"
+          },
+          "top_n": 10,
+          "include_negative": false
+        },
+        "depends_on": []
+      },
+      {
+        "step_id": "Query-2",
+        "title": "当前临期最严重的原材料批次（默认 7 天内）",
+        "kind": "query",
+        "action_id": "inventory_lots/query_most_expiring",
+        "dataset": "inventory_lots",
+        "operation": "rank",
+        "aggregate": "InventoryAnalytics",
+        "io_schema": {
+          "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "as_of_time": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "expiry_within_days": {
+                "type": "integer",
+                "default": 7
+              },
+              "store_id": {
+                "type": "string"
+              },
+              "top_n": {
+                "type": "integer",
+                "default": 20
+              }
+            }
+          }
+        },
+        "idempotency": "idempotent",
+        "args": {
+          "as_of_time": "2026-04-22T08:36:28.266439+00:00",
+          "expiry_within_days": 7,
+          "top_n": 20
+        },
+        "depends_on": []
+      },
+      {
+        "step_id": "Query-3",
+        "title": "高消耗菜品（用销量 TopN 近似；可按门店/品类过滤）",
+        "kind": "query",
+        "action_id": "order_items/top_dishes",
+        "dataset": "order_items",
+        "operation": null,
+        "aggregate": null,
+        "io_schema": {
+          "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "start_date": {
+                "type": "string",
+                "description": "开始日期（YYYY-MM-DD）"
+              },
+              "end_date": {
+                "type": "string",
+                "description": "结束日期（YYYY-MM-DD）"
+              },
+              "store_id": {
+                "type": "string",
+                "description": "门店ID（可选）"
+              },
+              "category_id": {
+                "type": "string",
+                "description": "品类ID（可选）"
+              },
+              "top_n": {
+                "type": "number",
+                "description": "Top N（默认 10）"
+              }
+            }
+          }
+        },
+        "idempotency": null,
+        "args": {
+          "start_date": "2025-01-01",
+          "end_date": "2025-12-31",
+          "top_n": 10
+        },
+        "depends_on": []
+      },
+      {
+        "step_id": "Query-3b",
+        "title": "基于临期原材料推荐可消耗菜品 TopN（用于选择赠券菜品）",
+        "kind": "query",
+        "action_id": "dishes/recommend_for_expiring_ingredients",
+        "dataset": "dishes",
+        "operation": "rank",
+        "aggregate": "MenuAnalytics",
+        "io_schema": {
+          "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "as_of_time": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "store_id": {
+                "type": "string"
+              },
+              "expiry_within_days": {
+                "type": "integer",
+                "default": 7
+              },
+              "lookback_days": {
+                "type": "integer",
+                "default": 30
+              },
+              "top_n": {
+                "type": "integer",
+                "default": 10
+              },
+              "strategy": {
+                "type": "string",
+                "enum": [
+                  "THEORETICAL_USAGE",
+                  "EXPECTED_USAGE_7D"
+                ],
+                "default": "EXPECTED_USAGE_7D"
+              }
+            }
+          }
+        },
+        "idempotency": "idempotent",
+        "args": {
+          "expiry_within_days": 7,
+          "top_n": 5,
+          "strategy": "EXPECTED_USAGE_7D",
+          "seed_ingredient_ids": "$Query-2.result.rows[*].ingredient_id"
+        },
+        "depends_on": [
+          "Query-2"
+        ]
+      },
+      {
+        "step_id": "Action-1a",
+        "title": "创建免费菜品券模板（赠送菜品=临期消耗推荐Top1）",
+        "kind": "command",
+        "action_id": "coupons/create_free_dish_template",
+        "dataset": "coupons",
+        "operation": "create",
+        "aggregate": "CouponTemplate",
+        "io_schema": {
+          "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "coupon_code",
+              "free_dish_id",
+              "valid_from",
+              "valid_to"
+            ],
+            "properties": {
+              "coupon_code": {
+                "type": "string"
+              },
+              "promotion_id": {
+                "type": "string"
+              },
+              "free_dish_id": {
+                "type": "string"
+              },
+              "valid_from": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "valid_to": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "is_active": {
+                "type": "boolean",
+                "default": true
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "idempotency": "non_idempotent",
+        "args": {
+          "coupon_code": "FREE_DISH_20260422",
+          "free_dish_id": "$Query-3b.result.rows[0].dish_id",
+          "valid_from": "2026-04-22T08:36:28.266439+00:00",
+          "valid_to": "2026-04-29T08:36:28.266439+00:00",
+          "reason": "临期原材料消耗运营（自动推荐）"
+        },
+        "depends_on": [
+          "Query-3b"
+        ]
+      },
+      {
+        "step_id": "Action-1b",
+        "title": "向 Top10 会员发放免费菜品券",
+        "kind": "command",
+        "action_id": "customer_coupons/issue_free_dish_coupon",
+        "dataset": "customer_coupons",
+        "operation": "issue",
+        "aggregate": "Coupon",
+        "io_schema": {
+          "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "customer_id",
+              "coupon_id",
+              "issued_at"
+            ],
+            "properties": {
+              "customer_id": {
+                "type": "string"
+              },
+              "coupon_id": {
+                "type": "string"
+              },
+              "issued_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "idempotency": "non_idempotent",
+        "args": {
+          "customer_id": "$Query-1.result.rows[*].customer_id",
+          "coupon_id": "$Action-1a.result.coupon_id",
+          "issued_at": "2026-04-22T08:36:28.266439+00:00",
+          "reason": "积分Top会员回馈 + 临期消耗活动"
+        },
+        "depends_on": [
+          "Query-1",
+          "Action-1a"
+        ]
+      },
+      {
+        "step_id": "Action-2a",
+        "title": "新增会员套餐（用于承载送菜券权益）",
+        "kind": "command",
+        "action_id": "membership_packages/create",
+        "dataset": "membership_packages",
+        "operation": "create",
+        "aggregate": "MembershipPackage",
+        "io_schema": {
+          "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "package_code",
+              "package_name",
+              "price",
+              "currency"
+            ],
+            "properties": {
+              "package_code": {
+                "type": "string"
+              },
+              "package_name": {
+                "type": "string"
+              },
+              "price": {
+                "type": "number"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "start_date": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end_date": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        "idempotency": "non_idempotent",
+        "args": {
+          "package_code": "PKG_FREE_DISH_20260422",
+          "package_name": "临期消耗送菜券套餐",
+          "price": "$Query-3b.result.rows[0].dish_theoretical_unit_cost",
+          "currency": "CNY",
+          "start_date": "2026-04-22T08:36:28.266439+00:00",
+          "end_date": "2026-05-22T08:36:28.266439+00:00"
+        },
+        "depends_on": [
+          "Query-3b"
+        ]
+      },
+      {
+        "step_id": "Action-2b",
+        "title": "为会员套餐挂载券权益（最低消费=赠送菜品基本成本）",
+        "kind": "command",
+        "action_id": "membership_package_benefits/add_coupon_benefit",
+        "dataset": "membership_package_benefits",
+        "operation": "create",
+        "aggregate": "MembershipPackage",
+        "io_schema": {
+          "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "package_id",
+              "coupon_id",
+              "min_spend_amount"
+            ],
+            "properties": {
+              "package_id": {
+                "type": "string"
+              },
+              "coupon_id": {
+                "type": "string"
+              },
+              "min_spend_amount": {
+                "type": "number"
+              },
+              "benefit_type": {
+                "type": "string",
+                "default": "COUPON"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "idempotency": "non_idempotent",
+        "args": {
+          "package_id": "$Action-2a.result.package_id",
+          "coupon_id": "$Action-1a.result.coupon_id",
+          "min_spend_amount": "$Query-3b.result.rows[0].dish_theoretical_unit_cost",
+          "benefit_type": "COUPON",
+          "reason": "门槛=基本成本，鼓励复购并消耗临期原料"
+        },
+        "depends_on": [
+          "Action-2a",
+          "Action-1a"
+        ]
+      }
+    ]
+  },
+  "summary": "识别为动作请求；候选动作：membership_package_benefits/add_coupon_benefit（为会员套餐添加券类权益（含最低消费/基本成本门槛）），置信度 1.2000000000000002"
+}
