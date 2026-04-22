@@ -523,7 +523,15 @@ class OntologyQuerySkill:
             return f"生成 SQL 成功（intent={intent}，tables={len(tables)}）。"
         if sql and not valid:
             return f"生成 SQL 但未通过校验（intent={intent}）。"
-        return "未生成 SQL（可能是模型/路由/LLM 配置问题）。"
+        # 作为“模型指导工具”，默认隐藏 SQL：此时应基于 data_requirements 给出摘要，避免误判为“没生成”
+        total_ds = out.get("data_requirements_total_datasets")
+        if total_ds is None:
+            total_ds = len(out.get("data_requirements") or [])
+        if total_ds:
+            truncated = bool(out.get("data_requirements_truncated"))
+            suffix = "（已截断）" if truncated else ""
+            return f"识别到数据需求（intent={intent}，datasets={int(total_ds)}）{suffix}。"
+        return "未生成数据需求（可能是模型/路由/LLM 配置问题）。"
 
 
 def _build_llm_provider(cfg: ProviderConfig):
