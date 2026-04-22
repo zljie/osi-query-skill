@@ -50,19 +50,19 @@
 ### 3.1 总览流程
 ```mermaid
 flowchart TB
-  A[输入: YAML + question] --> B[加载/缓存模型]
-  B --> C{是否含动作意图动词?}
-  C -- 是 --> D[ActionRouter: action_types 召回]
-  D --> E{是否命中 action_candidates?}
-  E -- 否 --> F[blocked: ACTION_NOT_SUPPORTED + 建议补齐 action_types]
-  E -- 是 --> G[输出 kind=action + candidates(含io_schema/effects/幂等) + 可选 plan]
-  C -- 否 --> H[IntentRouter: 实体/指标召回 + intent分类]
-  H --> I[ContextBuilder: 子图注入]
-  I --> J[SQLGenerator: 生成 SQL/或 IR]
-  J --> K[SQLValidator: 表/字段/关系校验 + 可选修复重试]
-  K --> L[YamlLocator: SQL引用定位回 YAML 行号]
-  L --> M[可选 Gate: calibrate+verify+evidence]
-  M --> N[输出 kind=query + SQL/证据/校验结果]
+  A["输入: YAML + question"] --> B["加载/缓存模型"]
+  B --> C{"是否含动作意图动词?"}
+  C -- 是 --> D["ActionRouter: action_types 召回"]
+  D --> E{"是否命中 action_candidates?"}
+  E -- 否 --> F["blocked: ACTION_NOT_SUPPORTED + 建议补齐 action_types"]
+  E -- 是 --> G["输出 kind=action + candidates（含 io_schema、effects、幂等） + 可选 plan"]
+  C -- 否 --> H["IntentRouter: 实体/指标召回 + intent分类"]
+  H --> I["ContextBuilder: 子图注入"]
+  I --> J["SQLGenerator: 生成 SQL 或 IR"]
+  J --> K["SQLValidator: 表、字段、关系校验 + 可选修复重试"]
+  K --> L["YamlLocator: SQL 引用定位回 YAML 行号"]
+  L --> M["可选 Gate: calibrate + verify + evidence"]
+  M --> N["输出 kind=query + SQL、证据、校验结果"]
 ```
 
 ### 3.2 步骤解释（对应代码/模块）
