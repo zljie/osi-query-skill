@@ -12,7 +12,7 @@ version: 1.0.0
 
 - 输入：**OSI/本体 YAML（文件路径或字符串）** + **自然语言问题**
 - 输出：**结构化 JSON**（可直接作为下游 Agent 的中间产物/工具输出），包括：
-  - SQL（如果是 query 且生成成功）
+  - 不直接输出 SQL（默认），而是输出命中数据集与需要用到的属性（`referenced_tables` / `data_requirements`）。如需调试可打开 `--emit-sql`。
   - intent（aggregate/ranking/trend…）
   - 命中实体（datasets/metrics）
   - 校验错误与修复建议（validation_errors / warnings）
@@ -67,10 +67,11 @@ version: 1.0.0
 ### 4.2 输出（稳定 JSON）
 核心字段：
 - `kind`: `query` 或 `action`
-- `output.sql`
+- `output.sql`（默认空；仅调试时通过 `--emit-sql` 打开）
 - `output.intent`
 - `output.referenced_tables`
 - `output.referenced_metrics`
+- `output.data_requirements`（数据集与字段需求，用于“模型指导”而非 SQL 指导）
 - `output.validation_errors / validation_warnings`
 - `output.yaml_trace`
 - `action.action_candidates / rule_hints`

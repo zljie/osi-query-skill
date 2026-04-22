@@ -55,6 +55,11 @@ class QuerySkillConfig:
     generation_mode: str = "llm_sql"  # llm_sql | ir_sqlglot
     max_fix_retries: int = 2
     max_plan_retries: int = 2
+    # 作为“模型指导工具”，默认不直接暴露 SQL（避免把 SQL 当作对外契约/引导用户写 SQL）。
+    # 如需调试，可通过 CLI 打开 emit_sql。
+    emit_sql: bool = False
+    # 默认不产出跨域“固定模板 plan”（容易与当前本体不一致）；仅在显式开启时输出 plan。
+    enable_plan: bool = False
     provider: ProviderConfig = ProviderConfig()
 
 
@@ -128,8 +133,9 @@ class OntologyQuerySkill:
                 action_payload["summary"] = "动作请求未命中任何 action_types；已返回 blocked（建议补齐动作目录）。"
                 return action_payload
 
-            # 1.1) 生成“建议风格”的结构化计划（Query-1..Action-2）
-            action_payload["plan"] = self._build_plan_from_action_candidates(rag=rag, question=question, action_payload=action_payload)
+            # 1.1) 可选：结构化计划（默认关闭，避免与不同领域本体不一致）
+            if self.cfg.enable_plan:
+                action_payload["plan"] = self._build_plan_from_action_candidates(rag=rag, question=question, action_payload=action_payload)
 
             action_payload["status"] = "ok"
             action_payload["summary"] = self._summarize(action_payload)
@@ -137,6 +143,8 @@ class OntologyQuerySkill:
 
         # 2) Query：走 Ontology-RAG 原始 QueryResult（dataclass）
         result = rag.query(question)
+        internal_sql = getattr(result, "sql", "") or ""
+        referenced_tables = list(getattr(result, "referenced_tables", []) or [])
 
         # 统一结构化输出（稳定字段，便于下游 Agent 消费）
         payload: dict[str, Any] = {
@@ -149,11 +157,12 @@ class OntologyQuerySkill:
                 "model_name": getattr(getattr(rag, "model", None), "name", None),
             },
             "output": {
-                "sql": getattr(result, "sql", ""),
+                # 作为“模型指导工具”：默认不输出 SQL；但字段保持存在以保证结构稳定
+                "sql": internal_sql if self.cfg.emit_sql else "",
                 "is_valid": bool(getattr(result, "is_valid", False)),
                 "intent": getattr(result, "intent", "unknown"),
                 "confidence": float(getattr(result, "confidence", 0.0)),
-                "referenced_tables": list(getattr(result, "referenced_tables", []) or []),
+                "referenced_tables": referenced_tables,
                 "referenced_metrics": list(getattr(result, "referenced_metrics", []) or []),
                 "validation_errors": list(getattr(result, "validation_errors", []) or []),
                 "validation_warnings": list(getattr(result, "validation_warnings", []) or []),
@@ -168,12 +177,25 @@ class OntologyQuerySkill:
             },
         }
 
+        # 2.1) 输出“数据集 + 属性”指导信息（不依赖 SQL 外显）
+        try:
+            fields_map = _extract_referenced_fields_from_sql(internal_sql, rag=rag)
+        except Exception:
+            fields_map = {}
+        # 优先用 SQL 中可解析到的 dataset/field（更贴近“需要哪些属性”）；解析不到再退回 referenced_tables
+        all_ds_for_requirements = sorted(list(fields_map.keys())) if fields_map else referenced_tables
+        max_ds = 8
+        payload["output"]["data_requirements_total_datasets"] = len(all_ds_for_requirements)
+        payload["output"]["data_requirements_truncated"] = len(all_ds_for_requirements) > max_ds
+        ds_for_requirements = all_ds_for_requirements[:max_ds]
+        payload["output"]["data_requirements"] = _build_data_requirements(rag=rag, referenced_tables=ds_for_requirements, fields_map=fields_map)
+
         # 3) 可选：Gate 产出（更强的结构化证据与违规信息）
         try:
             gate = _build_gate_result(
                 trace_id="skill-local",
                 question=question,
-                sql=payload["output"].get("sql") or "",
+                sql=internal_sql,
                 rag=rag,
                 dialect=self.cfg.dialect,
             )
@@ -182,7 +204,8 @@ class OntologyQuerySkill:
             payload["gate"] = {}
 
         # 4) Grounding 兜底：如果没有命中任何 metric 且 SQL 为空/或无效，则标记为 blocked
-        if (not payload["output"].get("referenced_metrics")) and (not (payload["output"].get("sql") or "").strip()):
+        # 注意：sql 对外可能被隐藏，所以这里使用 internal_sql 判断
+        if (not payload["output"].get("referenced_metrics")) and (not internal_sql.strip()):
             payload["status"] = "blocked"
             payload["violations"] = [
                 {
@@ -264,6 +287,15 @@ class OntologyQuerySkill:
         # 额外建议：基于 token 召回可能相关的动作（用于“动作目录补齐”）
         suggestions = _suggest_actions(rag.kg, question)
 
+        # 从 top candidate 的 io_schema 中抽取 required 字段，方便调用方“补齐参数”
+        top_required: list[str] = []
+        try:
+            if candidates:
+                schema = ((candidates[0].get("io_schema") or {}).get("input_schema") or {})
+                top_required = list(schema.get("required") or [])
+        except Exception:
+            top_required = []
+
         return {
             "status": "ok",
             "kind": "action",
@@ -283,6 +315,10 @@ class OntologyQuerySkill:
                 "validation_errors": [],
                 "validation_warnings": [],
                 "yaml_trace": [],
+                # 统一字段：action 场景下通常不需要数据集字段集合，因此为空
+                "data_requirements": [],
+                "data_requirements_total_datasets": 0,
+                "data_requirements_truncated": False,
                 "metrics": {},
             },
             "action": {
@@ -291,6 +327,7 @@ class OntologyQuerySkill:
                 "action_candidates": candidates,
                 "rule_hints": rule_hints,
                 "action_suggestions": suggestions,
+                "top_candidate_required_args": top_required,
             },
         }
 
@@ -597,6 +634,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--mock-sql", default="SELECT 1;", help="provider=mock 时返回的 SQL")
     p.add_argument("--max-fix-retries", type=int, default=2, help="SQL 修复重试次数")
     p.add_argument("--max-plan-retries", type=int, default=2, help="IR 规划重试次数")
+    p.add_argument("--emit-sql", action="store_true", help="对外输出 SQL（仅用于调试；默认关闭）")
+    p.add_argument("--enable-plan", action="store_true", help="输出 plan（默认关闭；不同领域本体容易不一致）")
     return p.parse_args()
 
 
@@ -607,6 +646,8 @@ def main() -> None:
         generation_mode=args.mode,
         max_fix_retries=args.max_fix_retries,
         max_plan_retries=args.max_plan_retries,
+        emit_sql=bool(getattr(args, "emit_sql", False)),
+        enable_plan=bool(getattr(args, "enable_plan", False)),
         provider=ProviderConfig(
             provider=args.provider,
             model=args.model,
@@ -617,6 +658,76 @@ def main() -> None:
     skill = OntologyQuerySkill(cfg)
     result = skill.query(yaml_path=args.yaml_path, question=args.question)
     print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def _extract_referenced_fields_from_sql(sql: str, *, rag: Any) -> dict[str, list[str]]:
+    """
+    从内部生成的 SQL 中尽力抽取 “dataset -> fields”：
+    - 不作为强契约，只用于给调用方展示“需要哪些属性”；
+    - 如果 SQL 为空或无法解析，则返回空映射。
+    """
+    import re
+
+    s = (sql or "").strip()
+    if not s:
+        return {}
+
+    # dataset 名单：以本体的 dataset 为准（避免把 alias 当作 dataset）
+    dataset_names: set[str] = set()
+    try:
+        dataset_names = set(getattr(rag.kg, "_dataset_map", {}).keys())
+    except Exception:
+        dataset_names = set()
+
+    pairs = re.findall(r"([a-zA-Z_][a-zA-Z0-9_]*)\\.([a-zA-Z_][a-zA-Z0-9_]*)", s)
+    out: dict[str, set[str]] = {}
+    for t, c in pairs:
+        if dataset_names and (t not in dataset_names):
+            continue
+        out.setdefault(t, set()).add(c)
+
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def _build_data_requirements(*, rag: Any, referenced_tables: list[str], fields_map: dict[str, list[str]]) -> list[dict[str, Any]]:
+    """
+    输出“数据集 + 属性”指导信息（稳定、可解释）：
+    - referenced_tables：来自模型 grounding 的命中数据集
+    - fields_map：从内部 SQL 尽力抽取的字段集合（可能为空）
+    """
+    reqs: list[dict[str, Any]] = []
+    dataset_map = getattr(getattr(rag, "kg", None), "_dataset_map", {}) or {}
+
+    for ds_name in referenced_tables:
+        ds = dataset_map.get(ds_name)
+        pk = []
+        try:
+            pk = list(getattr(ds, "primary_key", []) or [])
+        except Exception:
+            pk = []
+
+        used_fields = fields_map.get(ds_name, []) or []
+        # 如果抽不到 used_fields，至少给出主键作为“可用属性入口”
+        stable_fields = used_fields or pk
+
+        # 字段描述（只取 stable_fields，避免刷屏）
+        field_desc: dict[str, str] = {}
+        try:
+            fields = getattr(ds, "fields", []) or []
+            meta = {f.name: (f.description or "") for f in fields if getattr(f, "name", None)}
+            field_desc = {fn: meta.get(fn, "") for fn in stable_fields}
+        except Exception:
+            field_desc = {fn: "" for fn in stable_fields}
+
+        reqs.append(
+            {
+                "dataset": ds_name,
+                "primary_key": pk,
+                "fields": stable_fields,
+                "field_descriptions": field_desc,
+            }
+        )
+    return reqs
 
 
 if __name__ == "__main__":

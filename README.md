@@ -3,7 +3,8 @@
 一个可复用的 Query Skill：输入 **OSI/本体 YAML** + **自然语言指令**，输出**结构化结果 JSON**，用于让任意 Agent 在“拿到本体”后即可产出可审计、可消费的结构化回复。
 
 支持两类输出：
-- **Query**：SQL 草案 + intent + 命中实体 + 校验错误/建议 + YAML 定位（yaml_trace）+（可选）gate 证据
+- **Query**：不直接输出 SQL（默认），而是输出：intent + 命中数据集（referenced_tables）+ 需要用到的属性（data_requirements）+ 校验错误/建议 + YAML 定位（yaml_trace）+（可选）gate 证据  
+  （如需调试可通过 `--emit-sql` 打开 SQL 输出）
 - **Action/Command**：动作候选（action_types）+ 参数 schema（io_schema）+ 幂等/标签/规则提示 +（可选）plan（Query-1..Action-2 风格）
 
 ## 1. 目标与边界
@@ -38,7 +39,7 @@
 - `status`: `ok` / `blocked` / `error`
 - `kind`: `query` / `action`
 - `input`: 输入摘要（question、dialect、generation_mode、model_name）
-- `output`: query 相关输出（sql/is_valid/intent/confidence/referenced_*/validation_*/yaml_trace/metrics）
+- `output`: query 相关输出（sql(默认空)/is_valid/intent/confidence/referenced_*/data_requirements/validation_*/yaml_trace/metrics）
 - `action`: action 相关输出（action_intent/action_confidence/action_candidates/rule_hints）
 - `plan`（可选）：当识别为动作意图且命中候选动作时，输出 **Query-1..Action-2 风格**计划骨架（含 depends_on 与 `$StepRef` 引用）
 - `violations`（可选）：当 blocked 时，列出原因与建议

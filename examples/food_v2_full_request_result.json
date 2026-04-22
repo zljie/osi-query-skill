@@ -14,6 +14,9 @@
     "confidence": 1.0,
     "referenced_tables": [],
     "referenced_metrics": [],
+    "data_requirements": [],
+    "data_requirements_total_datasets": 0,
+    "data_requirements_truncated": false,
     "validation_errors": [],
     "validation_warnings": [],
     "yaml_trace": [],
@@ -22,6 +25,11 @@
   "action": {
     "action_intent": "action",
     "action_confidence": 1.0,
+    "top_candidate_required_args": [
+      "package_id",
+      "coupon_id",
+      "min_spend_amount"
+    ],
     "action_candidates": [
       {
         "id": "membership_package_benefits/add_coupon_benefit",
